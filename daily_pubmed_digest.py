@@ -139,7 +139,7 @@ def summarize_ja_bullets(text: str, title: str):
         論文タイトル: {title}
         
         アブストラクト:
-        {abstract}
+        {text}
         
         出力形式:
         ・[ポイント1]
