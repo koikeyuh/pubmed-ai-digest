@@ -119,8 +119,8 @@ def parse_records(xml_text):
 # ==== Gemini 要約 ====
 def summarize_ja_bullets(text: str, title: str):
     
-    genai.configure(api_key=GEMINI_API_KEY)
-    model = genai.GenerativeModel('gemini-1.5-flash')
+    #genai.configure(api_key=GEMINI_API_KEY)
+    #model = genai.GenerativeModel('gemini-1.5-flash')
 
     prompt = f"""
         以下の医学論文のアブストラクトを読んで、放射線腫瘍学の専門家向けに、重要なポイントを日本語で4つの箇条書きで日本語に要約してください。
@@ -144,8 +144,8 @@ def summarize_ja_bullets(text: str, title: str):
 
         response = client.models.generate_content(
             model="gemini-2.5-flash", contents=prompt)
-        print(response.text)
-        response = model.generate_content(prompt)
+        #print(response.text)
+        #response = model.generate_content(prompt)
         return response
         # 箇条書きを抽出
         #lines = response.text.strip().split('\n')
