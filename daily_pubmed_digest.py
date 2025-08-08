@@ -222,6 +222,7 @@ def main():
                     rec["summary"] = summarize_ja_bullets(abstract, rec["title"])
                     time.sleep(0.2)  # 無料枠RPMに配慮
                 except Exception as e:
+                    print(f"要約エラー ({abstract[:30]}...): {e}")
                     rec["summary"] = "・要約生成に失敗しました"
             else:
                 rec["summary"] = "・この論文にはPubMed上でアブストラクトが見つかりません"
