@@ -83,8 +83,19 @@ def parse_records(xml_text):
         pmid = (art.findtext(".//PMID") or "").strip()
         art_title = (art.findtext(".//Article/ArticleTitle") or "").strip()
         # アブストラクト
-        ab_elems = art.findall(".//Abstract/AbstractText")
-        abstract = "\n".join([(e.text or "").strip() for e in ab_elems if (e.text or "").strip()]) or ""
+        abstract_texts = []
+        abstract_elems = art.findall('.//AbstractText')
+        for abs_elem in abstract_elems:
+            if abs_elem.text:
+                abstract_texts.append(abs_elem.text)
+            if 'Label' in abs_elem.attrib:
+                label = abs_elem.attrib['Label']
+                text = abs_elem.text or ""
+                abstract_texts.append(f"{label}: {text}")
+        abstract = " ".join(abstract_texts)
+        
+        #ab_elems = art.findall(".//Abstract/AbstractText")
+        #abstract = "\n".join([(e.text or "").strip() for e in ab_elems if (e.text or "").strip()]) or ""
         # 著者（先頭3名 + et al.）
         authors = []
         for au in art.findall(".//AuthorList/Author"):
