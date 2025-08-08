@@ -33,7 +33,7 @@ jobs:
           NCBI_API_KEY: ${{ secrets.NCBI_API_KEY }}
           # カンマ区切りでジャーナル名（例は放射線腫瘍学系）
           JOURNALS: "International Journal of Radiation Oncology Biology Physics,Radiotherapy and Oncology,Strahlentherapie und Onkologie,Clinical and Translational Radiation Oncology"
-          RECIPIENT_EMAIL: ${{ secrets.GMAIL_ADDRESS }}
+          RECIPIENT_EMAIL: ${{ secrets.RECIPIENT_EMAIL }}
           GEMINI_MODEL: "gemini-1.5-flash"
         run: python daily_pubmed_digest.py
 
