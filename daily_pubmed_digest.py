@@ -135,11 +135,7 @@ def summarize_ja_bullets(text: str, title: str):
         ・[ポイント3]
         ・[ポイント4]
         """
-    # “Thinking”はコスト節約のため0に（2.5 Flashは既定でThinking ON）
-    cfg = types.GenerateContentConfig(
-        thinking_config=types.ThinkingConfig(thinking_budget=0)
-    )
-    resp = client.models.generate_content(model=GEMINI_MODEL, contents=prompt, config=cfg)
+    resp = client.models.generate_content(model=GEMINI_MODEL, contents=prompt)
     return resp.text.strip()
 
 # ==== メール整形・送信 ====
