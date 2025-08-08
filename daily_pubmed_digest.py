@@ -135,7 +135,7 @@ def summarize_ja_bullets(text: str, title: str):
         ・[ポイント4]
         """
     try:
-        response = self.model.generate_content(prompt)
+        response = model.generate_content(prompt)
         # 箇条書きを抽出
         lines = response.text.strip().split('\n')
         points = [line.strip() for line in lines if line.strip().startswith('・')]
