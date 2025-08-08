@@ -116,10 +116,9 @@ def parse_records(xml_text):
 
 # ==== Gemini 要約 ====
 def summarize_ja_bullets(text: str, title: str):
-    # 新SDK: google-genai
-    from google import genai
-    from google.genai import types
-    client = genai.Client()  # GEMINI_API_KEY環境変数を自動読込
+    import google.generativeai as genai
+    genai.configure(api_key=api_key)
+    model = genai.GenerativeModel('gemini-1.5-flash')
 
     prompt = f"""
         以下の医学論文のアブストラクトを読んで、放射線腫瘍学の専門家向けに、重要なポイントを日本語で4つの箇条書きで日本語に要約してください。
@@ -135,8 +134,25 @@ def summarize_ja_bullets(text: str, title: str):
         ・[ポイント3]
         ・[ポイント4]
         """
-    resp = client.models.generate_content(model=GEMINI_MODEL, contents=prompt)
-    return resp.text.strip()
+    try:
+        response = self.model.generate_content(prompt)
+        # 箇条書きを抽出
+        lines = response.text.strip().split('\n')
+        points = [line.strip() for line in lines if line.strip().startswith('・')]
+            
+        if len(points) >= 4:
+            return points[:4]
+        else:
+            # 不足分を補完
+            return points + ["詳細はアブストラクトを参照してください"] * (4 - len(points))
+    except Exception as e:
+        print(f"要約エラー: {e}")
+        return [
+            "・AIによる要約生成に失敗しました",
+            "・原文をご確認ください",
+            "・一時的なエラーの可能性があります",
+            "・後ほど再試行してください"
+        ]
 
 # ==== メール整形・送信 ====
 def build_email_body(date_jst_str, items):
