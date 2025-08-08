@@ -137,16 +137,25 @@ def summarize_ja_bullets(text: str, title: str):
         ・[ポイント4]
         """
     try:
+        from google import genai
+
+        # The client gets the API key from the environment variable `GEMINI_API_KEY`.
+        client = genai.Client()
+
+        response = client.models.generate_content(
+            model="gemini-2.5-flash", contents=prompt)
+        print(response.text)
         response = model.generate_content(prompt)
+        return response
         # 箇条書きを抽出
-        lines = response.text.strip().split('\n')
-        points = [line.strip() for line in lines if line.strip().startswith('・')]
+        #lines = response.text.strip().split('\n')
+        #points = [line.strip() for line in lines if line.strip().startswith('・')]
             
-        if len(points) >= 4:
-            return points[:4]
-        else:
+        #if len(points) >= 4:
+            #return points[:4]
+        #else:
             # 不足分を補完
-            return points + ["詳細はアブストラクトを参照してください"] * (4 - len(points))
+            #return points + ["詳細はアブストラクトを参照してください"] * (4 - len(points))
     except Exception as e:
         print(f"要約エラー: {e}")
         return [
