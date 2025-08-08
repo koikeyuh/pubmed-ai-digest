@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from xml.etree import ElementTree as ET
+import google.generativeai as genai
 
 # ==== 環境変数 ====
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")  # AI Studio 無料枠のFlash
@@ -13,6 +14,7 @@ GMAIL_ADDRESS = os.getenv("GMAIL_ADDRESS")
 GMAIL_APP_PASSWORD = os.getenv("GMAIL_APP_PASSWORD")
 PUBMED_TOOL_EMAIL = os.getenv("PUBMED_TOOL_EMAIL", GMAIL_ADDRESS)  # eutilsの&emailに使用
 NCBI_API_KEY = os.getenv("NCBI_API_KEY", "")  # 任意（無くても可）
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 # ==== PubMed E-utilities 基本 ====
 EUTILS_BASE = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/"
@@ -116,8 +118,8 @@ def parse_records(xml_text):
 
 # ==== Gemini 要約 ====
 def summarize_ja_bullets(text: str, title: str):
-    import google.generativeai as genai
-    genai.configure(api_key=api_key)
+    
+    genai.configure(api_key=GEMINI_API_KEY)
     model = genai.GenerativeModel('gemini-1.5-flash')
 
     prompt = f"""
