@@ -1,0 +1,41 @@
+name: pubmed-daily-digest
+
+on:
+  schedule:
+    - cron: "30 22 * * *"  # JST 07:30 相当（UTCで設定）
+  workflow_dispatch: {}     # 手動実行も可能
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests google-genai
+
+      - name: Run script
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          PUBMED_TOOL_EMAIL: ${{ secrets.PUBMED_TOOL_EMAIL }}
+          # 任意: NCBI APIキー（なくてもOK）
+          NCBI_API_KEY: ${{ secrets.NCBI_API_KEY }}
+          # カンマ区切りでジャーナル名（例は放射線腫瘍学系）
+          JOURNALS: "International Journal of Radiation Oncology Biology Physics,Radiotherapy and Oncology,Strahlentherapie und Onkologie,Clinical and Translational Radiation Oncology"
+          RECIPIENT_EMAIL: ${{ secrets.GMAIL_ADDRESS }}
+          GEMINI_MODEL: "gemini-2.5-flash"
+        run: python daily_pubmed_digest.py
+
+      - name: Commit state (sent_pmids.json)
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "chore: update sent_pmids"
+          file_pattern: sent_pmids.json
