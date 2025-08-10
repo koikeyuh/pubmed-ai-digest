@@ -9,6 +9,7 @@ PubMed → (特定ジャーナルの新着) → Gemini(邦題+4点要約, 1コ�
 """
 
 import os, json, time, ssl, smtplib, requests, re
+from string import Template
 from datetime import datetime, timedelta, timezone
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -248,7 +249,7 @@ def _sanitize_against_abstract(bullets, abstract):
         out.append(b)
     return out
 
-PROMPT_TEMPLATE = """あなたは放射線腫瘍学の事実抽出専用サマライザーです。以下を厳守してください。
+PROMPT_TEMPLATE = Template("""あなたは放射線腫瘍学の事実抽出専用サマライザーです。以下を厳守してください。
 
 【出力】
 - 日本語。厳格JSONのみを出力（前後の余計な文字・説明・コードブロック禁止）
@@ -279,11 +280,11 @@ PROMPT_TEMPLATE = """あなたは放射線腫瘍学の事実抽出専用サマ�
 - 記号の体裁は不要（先頭の「・」は付けない）。句読点は日本語の標準を使用
 
 英語タイトル:
-{title}
+$TITLE
 
 アブストラクト:
-{abstract}
-"""
+$ABSTRACT
+""")
 
 def summarize_title_and_bullets(title: str, abstract: str) -> dict:
     client = genai.Client()  # GEMINI_API_KEY は環境変数から
