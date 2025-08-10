@@ -375,15 +375,13 @@ def main():
 
         # 4) 各レコードを要約（1論文=1APIコール）
         for rec in records:
-            abstract = rec["abstract"]
-            if abstract:
-                data = summarize_title_and_bullets(rec["title"], abstract)
-                rec["title_ja"] = data["title_ja"]
+            data = summarize_title_and_bullets(rec["title"], rec["abstract"] or "")
+            rec["title_ja"] = data["title_ja"]
+            if rec["abstract"]:
                 rec["summary"] = "\n".join(data["bullets"])
-                time.sleep(SLEEP_BETWEEN_CALLS)  # 無料枠RPMに配慮
             else:
-                rec["title_ja"] = "（邦題生成に失敗）"
                 rec["summary"] = "・この論文にはPubMed上でアブストラクトが見つかりません"
+            time.sleep(SLEEP_BETWEEN_CALLS)  # 無料枠RPMに配慮
             items.append(rec)
 
         # 5) 送信済み更新
