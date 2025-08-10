@@ -89,6 +89,16 @@ def pubmed_efetch(pmids):
     r.raise_for_status()
     return r.text
 
+def _norm_ws(s: str) -> str:
+    # 改行や連続空白を1スペースへ
+    return re.sub(r"\s+", " ", (s or "")).strip()
+
+def _itertext(elem) -> str:
+    # 要素配下のテキスト（子要素含む）をすべて連結
+    if elem is None:
+        return ""
+    return _norm_ws("".join(elem.itertext()))
+
 def parse_records(xml_text):
     """EFetch XMLから必要項目を抜き出す"""
     if not xml_text:
@@ -97,19 +107,22 @@ def parse_records(xml_text):
     results = []
     for art in root.findall(".//PubmedArticle"):
         pmid = (art.findtext(".//PMID") or "").strip()
-        title = (art.findtext(".//Article/ArticleTitle") or "").strip()
+        
+        # ★ タイトル：findtext -> itertext に変更
+        title_elem = art.find(".//Article/ArticleTitle")
+        title = _itertext(title_elem)
 
-        # --- Abstract（Label付きにも対応） ---
+        if len(title) < 2:
+            print("WARN: suspicious title for PMID", pmid, "->", repr(title))
+
+        # ★ アブストラクト：子要素（<i>, <sup> 等）も含めて拾う
         texts = []
         for abs_elem in art.findall(".//Abstract/AbstractText"):
             label = abs_elem.attrib.get("Label") if abs_elem.attrib else None
-            txt = (abs_elem.text or "").strip()
+            txt = _itertext(abs_elem)
             if not txt:
                 continue
-            if label:
-                texts.append(f"{label}: {txt}")
-            else:
-                texts.append(txt)
+            texts.append(f"{label}: {txt}" if label else txt)
         abstract = "\n".join(texts)
 
         # --- 著者 ---
