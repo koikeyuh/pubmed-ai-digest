@@ -13,6 +13,7 @@ from datetime import datetime, timedelta, timezone
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from xml.etree import ElementTree as ET
+from google import genai
 
 # ========= 環境変数 =========
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
