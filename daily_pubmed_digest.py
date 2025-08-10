@@ -61,7 +61,7 @@ def pubmed_esearch(term):
         "term": term,
         "retmode": "json",
         "datetype": "edat",
-        "reldate": "2",
+        "reldate": "4",
         "retmax": "200",
         "sort": "pub_date",
         "tool": TOOL_NAME,
@@ -144,7 +144,7 @@ def parse_records(xml_text):
             init = au.findtext("Initials") or ""
             if last or init:
                 authors.append(f"{last} {init}".strip())
-        authors_line = (", ".join(authors[:3]) + (" ほか" if len(authors) > 3 else "")) if authors else ""
+        authors_line = (", ".join(authors[:3]) + (" et al." if len(authors) > 3 else "")) if authors else ""
 
         # --- ジャーナル ---
         journal = _prefer_abbrev(art)
