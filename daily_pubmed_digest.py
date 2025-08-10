@@ -99,6 +99,16 @@ def _itertext(elem) -> str:
         return ""
     return _norm_ws("".join(elem.itertext()))
 
+def _prefer_abbrev(art) -> str:
+    # ① ISO略称 → ② MedlineTA → ③ 正式名 の優先順
+    for path in [".//Journal/ISOAbbreviation",
+                 ".//MedlineJournalInfo/MedlineTA",
+                 ".//Journal/Title"]:
+        val = art.findtext(path)
+        if val and val.strip():
+            return _norm_ws(val)
+    return ""
+
 def parse_records(xml_text):
     """EFetch XMLから必要項目を抜き出す"""
     if not xml_text:
@@ -135,7 +145,7 @@ def parse_records(xml_text):
         authors_line = (", ".join(authors[:3]) + (" ほか" if len(authors) > 3 else "")) if authors else ""
 
         # --- ジャーナル ---
-        journal = (art.findtext(".//Journal/Title") or art.findtext(".//Journal/ISOAbbreviation") or "").strip()
+        journal = _prefer_abbrev(art)
 
         # --- 発行日（欠損に強く） ---
         y = (art.findtext(".//JournalIssue/PubDate/Year") or "").strip()
@@ -190,6 +200,26 @@ def _force_json(text: str) -> dict:
     except Exception:
         return {}
 
+def _numbers(s: str):
+    # 12, 12.3, 95%, 84–95 などをざっくり抽出（全角→半角も軽く吸収）
+    s = s.replace("％", "%").replace("．", ".")
+    nums = set(re.findall(r"\d+(?:\.\d+)?%?", s))
+    ranges = re.findall(r"\b\d+\s*[–-]\s*\d+\b", s)  # 84–95
+    return nums.union(ranges)
+
+def _terms(s: str):
+    # FAPI-46 / FAPI-74 / Ga-FAPI / [68Ga] など“医用核種/トレーサー”っぽい語を抽出
+    pats = [
+        r"\[\d+\s*[A-Za-z]+\]",        # [68Ga], [18F]
+        r"[A-Za-z]+-[A-Za-z]+-\d+",    # Ga-FAPI-46
+        r"FAPI-\d+",                   # FAPI-46
+        r"[A-Za-z]*FAPI-\d+",          # AlF-FAPI-74 など
+    ]
+    found = set()
+    for p in pats:
+        found.update(re.findall(p, s))
+    return found
+
 def _format_bullets(lines, target=4):
     xs = [str(x).strip() for x in (lines or []) if str(x).strip()]
     xs = [("・" + x.lstrip("・-•*・ 　")).strip() for x in xs]
@@ -199,29 +229,53 @@ def _format_bullets(lines, target=4):
     xs = [x if len(x) <= 150 else (x[:147] + "…") for x in xs]
     return xs
 
-def summarize_title_and_bullets(title: str, abstract: str) -> dict:
-    """
-    返り値: {"title_ja": str, "bullets": ["・...", "・...", "・...", "・..."]}
-    """
-    from google import genai
-    # APIキーが渡されていれば明示指定（環境変数経由でもOK）
-    client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else genai.Client()
+def _sanitize_against_abstract(bullets, abstract):
+    abs_nums  = _numbers(abstract)
+    abs_terms = _terms(abstract)
+    out = []
+    for b in bullets:
+        # 数値の検証：本文に無い数値は削除
+        for n in _numbers(b):
+            if n not in abs_nums:
+                b = b.replace(n, "（数値記載なし）")
+        # 核種/薬剤名の検証：本文に無い表記は削除
+        for t in _terms(b):
+            if t not in abs_terms:
+                b = b.replace(t, "")
+        # 余分なスペースの整形
+        b = re.sub(r"\s{2,}", " ", b).strip()
+        out.append(b)
+    return out
 
-    # 文字数/トークン対策：極端に長い抄録は先頭だけ
-    abstract = (abstract or "").strip()
-    if len(abstract) > 7000:
-        abstract = abstract[:7000]
+PROMPT_TEMPLATE = """あなたは放射線腫瘍学の事実抽出専用サマライザーです。以下を厳守してください。
 
-    prompt = f"""あなたは医学論文の要約編集者です。
-放射線治療医向けに、英語タイトルとアブストラクトから、以下を**日本語**で出力してください。
-1) "title_ja": タイトルの自然な邦題（30〜45字・1行・名詞止め・冗長な副題は圧縮）
-2) "bullets": 重要ポイント**4点**（各60〜120字・事実ベース・過度な推測禁止・記号不要）
+【出力】
+- 日本語。厳格JSONのみを出力（前後の余計な文字・説明・コードブロック禁止）
+- 形式:
+{
+  "title_ja": "30〜45字の邦題（名詞止め・冗長な副題は圧縮）",
+  "bullets": ["ポイント1","ポイント2","ポイント3","ポイント4"]
+}
 
-**出力はJSONのみ**。フォーマットは正確に次の通り：
-{{
-  "title_ja": "ここに邦題",
-  "bullets": ["ポイント1", "ポイント2", "ポイント3", "ポイント4"]
-}}
+【重要ルール（厳守）】
+- 事実抽出のみ。本文（タイトル/アブストラクト）に**無い内容は書かない**。外部知識・推測・一般論の追加禁止
+- **表記は原文そのまま**：固有名詞（薬剤/核種/トレーサー/試験名/登録番号）、略語（OS, PFS, LC, HR, CI, CTCAE 等）、数値（n, %, Gy, fx, HR, 95% CI, p値, 年齢, 追跡期間）・単位は**原文表記を厳密に維持**
+- 数値が本文に無い場合は作らず、「数値記載なし」と明記
+- 見出し語（Background/Methods/Results/Interpretation など）がある場合も、**本文中の事実のみ**を要点化
+
+【放射線腫瘍医向けの優先観点（該当するものだけ）】
+- 対象（がん種/病期/患者数/組入れ条件）
+- 介入/比較：放射線治療の**線量(Gy)**・**分割(fx)**・部位/照射野、モダリティ（IMRT/VMAT/SBRT/SRS/粒子線 等）、同時化学療法や併用薬
+- 主要評価項目：OS, PFS, LC, PPV/NPV, 反応率、HRとCI、p値、追跡期間
+- 安全性：急性/晩期毒性（**CTCAE Grade**表記そのまま）、有害事象
+- 画像診断/核医学：トレーサー・核種表記（例：[18F]、[68Ga]、FAPI-46 等）・読影指標
+- 研究デザイン：試験相/無作為化/単群/多施設、登録番号(NCT…)
+
+【出力の作り方】
+- "bullets" は**4点**。各60〜120字で簡潔に。事実以外の解釈や助言は書かない
+- 可能なら配列の順を「対象/デザイン → 介入（線量・分割/モダリティ） → 主要結果 → 安全性/臨床的含意（事実ベース）」にする
+- 数値や用語が本文に無い場合は、その要素だけ「数値記載なし」「記載なし」と書く
+- 記号の体裁は不要（先頭の「・」は付けない）。句読点は日本語の標準を使用
 
 英語タイトル:
 {title}
@@ -229,19 +283,29 @@ def summarize_title_and_bullets(title: str, abstract: str) -> dict:
 アブストラクト:
 {abstract}
 """
+
+def summarize_title_and_bullets(title: str, abstract: str) -> dict:
+    client = genai.Client()  # GEMINI_API_KEY は環境変数から
+    model_name = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
+
+    prompt = PROMPT_TEMPLATE.format(title=title, abstract=abstract[:7000] if abstract else "")
+
     try:
-        resp = client.models.generate_content(model=GEMINI_MODEL, contents=prompt)
+        resp = client.models.generate_content(model=model_name, contents=prompt)
         text = (_resp_to_text(resp) or "").strip()
         data = _force_json(text)
     except Exception:
         data = {}
 
     title_ja = str((data.get("title_ja") or "")).strip()
-    bullets = _format_bullets(data.get("bullets"))
+    bullets  = _format_bullets(data.get("bullets"))
 
-    # 邦題の微整形
+    # ---- 生成後の整合チェック（抄録に無い数値/用語を除去）----
+    bullets = _sanitize_against_abstract(bullets, abstract or "")
+
+    # 邦題の微整形（念のため）
     title_ja = title_ja.lstrip("・-•*[]() 　")
-    if title_ja.endswith(("。", "．", ".")):
+    if title_ja.endswith(("。","．",".")):
         title_ja = title_ja[:-1]
     if not title_ja:
         title_ja = "（邦題生成に失敗）"
@@ -322,7 +386,7 @@ def main():
     # 6) メール送信（0件でも通知する運用）
     jst = timezone(timedelta(hours=9))
     today = datetime.now(jst).strftime("%Y-%m-%d")
-    subject = f"新着論文AI要約配信（放射線腫瘍学）{today}"
+    subject = f"【新着論文AI要約配信】放射線腫瘍学 {today}"
     body = build_email_body(today, items)
     send_via_gmail(subject, body)
 
