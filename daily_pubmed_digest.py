@@ -61,7 +61,7 @@ def pubmed_esearch(term):
         "term": term,
         "retmode": "json",
         "datetype": "edat",
-        "reldate": "4",
+        "reldate": "2",
         "retmax": "200",
         "sort": "pub_date",
         "tool": TOOL_NAME,
