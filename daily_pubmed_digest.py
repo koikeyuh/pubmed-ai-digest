@@ -290,7 +290,10 @@ def summarize_title_and_bullets(title: str, abstract: str) -> dict:
     client = genai.Client()  # GEMINI_API_KEY は環境変数から
     model_name = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
 
-    prompt = PROMPT_TEMPLATE.format(title=title, abstract=abstract[:7000] if abstract else "")
+    prompt = PROMPT_TEMPLATE.substitute(
+        TITLE=title,
+        ABSTRACT=(abstract[:7000] if abstract else "")
+    )
 
     try:
         resp = client.models.generate_content(model=model_name, contents=prompt)
