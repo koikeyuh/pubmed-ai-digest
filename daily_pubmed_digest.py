@@ -111,6 +111,78 @@ def _prefer_abbrev(art) -> str:
             return _norm_ws(val)
     return ""
 
+# --- 日付整形ヘルパー ---
+_MONTH_ABBR = {
+    "1":"Jan","01":"Jan","Jan":"Jan","January":"Jan",
+    "2":"Feb","02":"Feb","Feb":"Feb","February":"Feb",
+    "3":"Mar","03":"Mar","Mar":"Mar","March":"Mar",
+    "4":"Apr","04":"Apr","Apr":"Apr","April":"Apr",
+    "5":"May","05":"May","May":"May",
+    "6":"Jun","06":"Jun","Jun":"Jun","June":"Jun",
+    "7":"Jul","07":"Jul","Jul":"Jul","July":"Jul",
+    "8":"Aug","08":"Aug","Aug":"Aug","August":"Aug",
+    "9":"Sep","09":"Sep","Sep":"Sep","September":"Sep",
+    "10":"Oct","Oct":"Oct","October":"Oct",
+    "11":"Nov","Nov":"Nov","November":"Nov",
+    "12":"Dec","Dec":"Dec","December":"Dec",
+}
+
+def _fmt_date(y, m, d):
+    """YYYY Mon DD/ YYYY Mon / YYYY を返す（mは略称に統一）"""
+    y = (y or "").strip()
+    m = _MONTH_ABBR.get((m or "").strip(), (m or "").strip())
+    d = (d or "").strip()
+    if y and m and d:
+        # 日は2桁にそろえる（1→01）
+        if d.isdigit() and len(d) == 1:
+            d = f"0{d}"
+        return f"{y} {m} {d}"
+    if y and m:
+        return f"{y} {m}"
+    return y or ""
+
+def _extract_pubdate_display(art):
+    """
+    発行日の表示優先度：
+    1) Article/ArticleDate[@DateType='Electronic']（EPub）
+    2) Article/ArticleDate（最初のもの）
+    3) JournalIssue/PubDate（Year/Month/Day または MedlineDate）
+    4) History/PubMedPubDate[@PubStatus='pubmed' or 'entrez']（最後の手段）
+    """
+    # 1) Electronic
+    for ad in art.findall(".//Article/ArticleDate"):
+        dt = (ad.attrib or {}).get("DateType", "").lower()
+        if dt == "electronic":
+            return _fmt_date(ad.findtext("Year"), ad.findtext("Month"), ad.findtext("Day"))
+
+    # 2) 何かしらのArticleDate
+    ad = art.find(".//Article/ArticleDate")
+    if ad is not None:
+        s = _fmt_date(ad.findtext("Year"), ad.findtext("Month"), ad.findtext("Day"))
+        if s:
+            return s
+
+    # 3) 号のPubDate
+    y = art.findtext(".//JournalIssue/PubDate/Year")
+    m = art.findtext(".//JournalIssue/PubDate/Month")
+    d = art.findtext(".//JournalIssue/PubDate/Day")
+    s = _fmt_date(y, m, d)
+    if s:
+        return s
+    # MedlineDate（例: "2025 Sep-Oct" 等）はそのまま返す
+    md = (art.findtext(".//JournalIssue/PubDate/MedlineDate") or "").strip()
+    if md:
+        return md
+
+    # 4) PubMed履歴（入庫日など）
+    for status in ("pubmed", "entrez", "medline"):
+        ppd = art.find(f".//History/PubMedPubDate[@PubStatus='{status}']")
+        if ppd is not None:
+            return _fmt_date(ppd.findtext("Year"), ppd.findtext("Month"), ppd.findtext("Day"))
+
+    return ""
+
+
 def parse_records(xml_text):
     """EFetch XMLから必要項目を抜き出す"""
     if not xml_text:
@@ -149,11 +221,8 @@ def parse_records(xml_text):
         # --- ジャーナル ---
         journal = _prefer_abbrev(art)
 
-        # --- 発行日（欠損に強く） ---
-        y = (art.findtext(".//JournalIssue/PubDate/Year") or "").strip()
-        m = (art.findtext(".//JournalIssue/PubDate/Month") or "").strip()
-        d = (art.findtext(".//JournalIssue/PubDate/Day") or "").strip()
-        pubdate = " ".join([x for x in [y, m, d] if x])
+        # --- 発行日（EPub優先で堅牢に） ---
+        pubdate = _extract_pubdate_display(art)
 
         # --- DOI ---
         doi = ""
