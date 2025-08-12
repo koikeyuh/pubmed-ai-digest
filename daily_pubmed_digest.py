@@ -216,7 +216,7 @@ def parse_records(xml_text):
             init = au.findtext("Initials") or ""
             if last or init:
                 authors.append(f"{last} {init}".strip())
-        authors_line = (", ".join(authors[:3]) + (" et al." if len(authors) > 3 else "")) if authors else ""
+        authors_line = (", ".join(authors[:3]) + (", et al." if len(authors) > 3 else "")) if authors else ""
 
         # --- ジャーナル ---
         journal = _prefer_abbrev(art)
@@ -361,7 +361,7 @@ $ABSTRACT
 
 def summarize_title_and_bullets(title: str, abstract: str) -> dict:
     client = genai.Client()  # GEMINI_API_KEY は環境変数から
-    model_name = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
+    model_name = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 
     prompt = PROMPT_TEMPLATE.substitute(
         TITLE=title,
@@ -430,13 +430,21 @@ def main():
     if not JOURNALS:
         raise SystemExit("環境変数 JOURNALS が未設定です。カンマ区切りでジャーナル名を指定してください。")
 
+    print("=== PubMed論文収集開始 ===")
+
     # 1) PubMed検索
     query = build_journal_query(JOURNALS)
     pmids = pubmed_esearch(query)
 
+    print(f"検索結果: {len(pmids)}件ヒット")
+
     # 2) 重複除去
     sent = load_sent_pmids()
     new_pmids = [p for p in pmids if p not in sent]
+
+    print(f"見つかった論文数: {len(pmids)}件")
+    print(f"既送信でスキップ: {len(pmids) - len(new_pmids)}件")
+    print(f"新規論文数: {len(new_pmids)}件")
 
     items = []
     if new_pmids:
@@ -445,7 +453,10 @@ def main():
         records = parse_records(xml)
 
         # 4) 各レコードを要約（1論文=1APIコール）
-        for rec in records:
+        print(f"\n{len(records)}件の新規論文を処理")
+        for idx, rec in enumerate(records, 1):
+            print("\n=== AI要約・翻訳生成開始 ===")
+            print(f"要約中 ({idx}/{len(records)}): {rec['title'][:50]}...")
             data = summarize_title_and_bullets(rec["title"], rec["abstract"] or "")
             rec["title_ja"] = data["title_ja"]
             if rec["abstract"]:
@@ -460,12 +471,15 @@ def main():
         save_sent_pmids(sent)
 
     # 6) メール送信（0件でも通知する運用）
+    print("\n=== メール送信 ===")
     jst = timezone(timedelta(hours=9))
     today = datetime.now(jst).strftime("%Y-%m-%d")
     count = len(items)  # ← 追加：新着数
     subject = f"【PubMed論文AI要約配信：新着{count}本】放射線腫瘍学 {today}"
     body = build_email_body(today, items)
     send_via_gmail(subject, body)
+    
+    print("\n=== 処理完了 ===")
 
 if __name__ == "__main__":
     main()
