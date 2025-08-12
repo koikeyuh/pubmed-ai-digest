@@ -182,6 +182,41 @@ def _extract_pubdate_display(art):
 
     return ""
 
+def _extract_pubtypes(art):
+    # PublicationType を重複なく順序保持で取得
+    pts = []
+    seen = set()
+    for pt in art.findall(".//PublicationTypeList/PublicationType"):
+        t = (pt.text or "").strip()
+        if t and t not in seen:
+            seen.add(t)
+            pts.append(t)
+    return pts
+
+# 表示言語（既定: 英語 / 日本語にしたい場合は env: PT_DISPLAY_LANG=ja）
+PT_JA_MAP = {
+    "Randomized Controlled Trial":"無作為化比較試験",
+    "Systematic Review":"システマティックレビュー",
+    "Meta-Analysis":"メタアナリシス",
+    "Clinical Trial":"臨床試験",
+    "Clinical Trial, Phase II":"第II相臨床試験",
+    "Clinical Trial, Phase III":"第III相臨床試験",
+    "Review":"総説",
+    "Guideline":"ガイドライン",
+    "Practice Guideline":"診療ガイドライン",
+    "Multicenter Study":"多施設研究",
+    "Comparative Study":"比較研究",
+    "Observational Study":"観察研究",
+    "Case Reports":"症例報告",
+    "Editorial":"編集者寄稿",
+    "Letter":"レター",
+}
+
+def _format_pt_for_display(pts):
+    lang = os.getenv("PT_DISPLAY_LANG", "en").lower()
+    if lang == "ja":
+        return ", ".join(PT_JA_MAP.get(p, p) for p in pts)
+    return ", ".join(pts)
 
 def parse_records(xml_text):
     """EFetch XMLから必要項目を抜き出す"""
@@ -221,6 +256,9 @@ def parse_records(xml_text):
         # --- ジャーナル ---
         journal = _prefer_abbrev(art)
 
+        # --- Publication Type（PT） ---
+        pubtypes = _extract_pubtypes(art)
+
         # --- 発行日（EPub優先で堅牢に） ---
         pubdate = _extract_pubdate_display(art)
 
@@ -242,6 +280,7 @@ def parse_records(xml_text):
             "doi": doi,
             "url": url,
             "abstract": abstract,
+            "pt": pubtypes,  # ← 追加
         })
     return results
 
@@ -404,6 +443,9 @@ def build_email_body(date_jst_str, items):
             lines.append(f"著者：{str(it.get('authors',''))}")
         lines.append(f"雑誌名：{str(it.get('journal',''))}")
         lines.append(f"発行日：{str(it.get('pubdate',''))}")
+        # ★ 追加：Publication Type
+        if it.get("pt"):
+            lines.append(f"文献種別（PT）：{_format_pt_for_display(it.get('pt', []))}")
         lines.append(f"Pubmed：{str(it.get('url',''))}")
         lines.append(f"DOI：{str(it.get('doi','') or '-')}")
         lines.append("要約（AI生成）：")
