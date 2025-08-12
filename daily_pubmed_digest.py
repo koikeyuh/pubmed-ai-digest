@@ -462,7 +462,8 @@ def main():
     # 6) メール送信（0件でも通知する運用）
     jst = timezone(timedelta(hours=9))
     today = datetime.now(jst).strftime("%Y-%m-%d")
-    subject = f"【新着論文AI要約配信】放射線腫瘍学 {today}"
+    count = len(items)  # ← 追加：新着数
+    subject = f"【PubMed論文AI要約配信：新着{count}本】放射線腫瘍学 {today}"
     body = build_email_body(today, items)
     send_via_gmail(subject, body)
 
