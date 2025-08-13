@@ -37,6 +37,8 @@ jobs:
           RECIPIENT_EMAIL: ${{ secrets.RECIPIENT_EMAIL }}
           GEMINI_MODEL: "gemini-2.5-flash"
           SLEEP_BETWEEN_CALLS: "0.3"
+          RECIPIENT_EMAILS:   ${{ secrets.RECIPIENT_EMAILS }}  # ← 複数宛先
+          MULTI_SEND_MODE:    "bcc"                             # ← 任意（既定 to）
         run: python daily_pubmed_digest.py
 
       - name: Commit state (sent_pmids.json)
