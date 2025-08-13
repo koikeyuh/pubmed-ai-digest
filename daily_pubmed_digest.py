@@ -13,6 +13,7 @@ from string import Template
 from datetime import datetime, timedelta, timezone
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from email.utils import parseaddr
 from xml.etree import ElementTree as ET
 from google import genai
 
@@ -429,6 +430,26 @@ def summarize_title_and_bullets(title: str, abstract: str) -> dict:
 
     return {"title_ja": title_ja, "bullets": bullets}
 
+def _parse_recipients_env() -> list[str]:
+    """
+    RECIPIENT_EMAILS / RECIPIENT_EMAIL / GMAIL_ADDRESS の順に採用。
+    区切り: カンマ/セミコロン/改行。`Name <addr>` 形式もOK。重複除去。
+    """
+    raw = (os.getenv("RECIPIENT_EMAILS")
+           or os.getenv("RECIPIENT_EMAIL")
+           or os.getenv("GMAIL_ADDRESS")
+           or "")
+    parts = re.split(r'[,\n;]+', raw)
+    emails, seen = [], set()
+    for p in parts:
+        name, addr = parseaddr(p.strip())
+        if addr:
+            key = addr.lower()
+            if key not in seen:
+                seen.add(key)
+                emails.append(addr)
+    return emails
+
 # ========= メール整形・送信 =========
 def build_email_body(date_jst_str, items):
     lines = []
@@ -453,19 +474,29 @@ def build_email_body(date_jst_str, items):
         lines.append("\n")
     return "\n".join(lines)
 
-def send_via_gmail(subject, body):
-    if not (GMAIL_ADDRESS and GMAIL_APP_PASSWORD and RECIPIENT):
-        raise RuntimeError("Gmail送信に必要な環境変数が不足しています。")
+def send_via_gmail(subject, body, recipients):
+    if not (GMAIL_ADDRESS and GMAIL_APP_PASSWORD and recipients):
+        raise RuntimeError("Gmail送信に必要な環境変数が不足しています（送信元/アプリパスワード/宛先）。")
+
     msg = MIMEMultipart()
     msg["From"] = GMAIL_ADDRESS
-    msg["To"] = RECIPIENT
     msg["Subject"] = subject
     msg.attach(MIMEText(body, "plain", "utf-8"))
+
+    # 宛先の見せ方（既定: To。全員のアドレスを隠したい場合は MULTI_SEND_MODE=bcc）
+    mode = os.getenv("MULTI_SEND_MODE", "to").lower()
+    if mode == "bcc":
+        msg["To"] = GMAIL_ADDRESS
+        msg["Bcc"] = ", ".join(recipients)
+        envelope_to = recipients
+    else:
+        msg["To"] = ", ".join(recipients)
+        envelope_to = recipients
 
     context = ssl.create_default_context()
     with smtplib.SMTP_SSL("smtp.gmail.com", 465, context=context) as server:
         server.login(GMAIL_ADDRESS, GMAIL_APP_PASSWORD)
-        server.sendmail(GMAIL_ADDRESS, [RECIPIENT], msg.as_string())
+        server.sendmail(GMAIL_ADDRESS, envelope_to, msg.as_string())
 
 # ========= メイン =========
 def main():
@@ -518,8 +549,15 @@ def main():
     today = datetime.now(jst).strftime("%Y-%m-%d")
     count = len(items)  # ← 追加：新着数
     subject = f"【PubMed論文AI要約配信：新着{count}本】放射線腫瘍学 {today}"
+
+    # ★ 追加：複数宛先の取得
+    recipients = _parse_recipients_env()
+    if not recipients:
+        raise SystemExit("宛先が見つかりません。RECIPIENT_EMAILS または RECIPIENT_EMAIL を設定してください。")
+
     body = build_email_body(today, items)
-    send_via_gmail(subject, body)
+    send_via_gmail(subject, body, recipients)
+    print(f"送信済み：{len(recipients)} 宛先")
     
     print("\n=== 処理完了 ===")
 
