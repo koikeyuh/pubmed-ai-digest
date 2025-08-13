@@ -358,6 +358,55 @@ def _sanitize_against_abstract(bullets, abstract):
         out.append(b)
     return out
 
+def translate_title_only(title: str) -> str:
+    """
+    アブストラクトなし論文向け：邦題のみを厳格JSONで生成し、title_ja を返す。
+    - 30〜45字、体言止め、冗長な副題は圧縮
+    - OS/PFS/Gy/fx/[18F] などの略語・表記は原文維持
+    - 外部知識・推測・要約文生成は禁止（タイトルのみを忠実に翻訳）
+    """
+    if not (title or "").strip():
+        return ""
+
+    client = genai.Client()
+    model_name = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+
+    prompt = Template("""You are a highly specialized AI assistant whose sole purpose is to produce a single strict JSON object with a Japanese title translation of a radiation oncology paper title, and nothing else.
+
+### Output (STRICT JSON ONLY)
+{
+  "title_ja": "A single Japanese title, strictly 30-45 characters, ending with a noun (taigen-dome), compressing redundant subtitles. Keep original abbreviations/units (OS, PFS, HR, CI, Gy, fx, SBRT/IMRT/VMAT/SIB/PBT, [18F], [68Ga], FAPI-46, nivolumab). Do NOT add information not present in the English title."
+}
+
+### Rules
+- Fact-based only from the English title; no external knowledge or assumptions.
+- Maintain original abbreviations/numerals exactly when present.
+- Natural Japanese suitable for clinicians; avoid unnecessary punctuation.
+- If study design terms (e.g., 第II相試験) are NOT explicitly present in the English title, do not add them.
+
+English Title:
+$TITLE
+""").substitute(TITLE=title)
+
+    try:
+        # JSON 強制（google-genai v1 以降で有効／古い版でも無害）
+        resp = client.models.generate_content(
+            model=model_name,
+            contents=prompt
+        )
+        text = (_resp_to_text(resp) or "").strip()
+        data = _force_json(text)
+        title_ja = (data.get("title_ja") or "").strip()
+    except Exception:
+        title_ja = ""
+
+    # 微整形：先頭の記号・括弧除去と末尾句点の削除
+    title_ja = title_ja.lstrip("・-•*[]() 　")
+    if title_ja.endswith(("。", "．", ".")):
+        title_ja = title_ja[:-1]
+
+    return title_ja
+
 
 PROMPT_TEMPLATE = Template("""あなたは放射線腫瘍学の事実抽出専用サマライザーです。時間のない放射線治療医向けに最新論文を日本語要約をします。以下を厳守して、PubMedで見つかった論文の英語タイトルとアブストラクトから自然な日本語になるように要約をしてください。
 
@@ -426,7 +475,7 @@ def summarize_title_and_bullets(title: str, abstract: str) -> dict:
     if title_ja.endswith(("。","．",".")):
         title_ja = title_ja[:-1]
     if not title_ja:
-        title_ja = "（邦題生成に失敗）"
+        title_ja = translate_title_only(title) or "（邦題生成に失敗）"
 
     return {"title_ja": title_ja, "bullets": bullets}
 
