@@ -16,6 +16,7 @@ from email.mime.multipart import MIMEMultipart
 from email.utils import parseaddr
 from xml.etree import ElementTree as ET
 from google import genai
+from google.genai import types
 
 # ========= 環境変数 =========
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
@@ -389,10 +390,12 @@ $TITLE
 """).substitute(TITLE=title)
 
     try:
+        config=types.GenerateContentConfig(temperature=float(os.getenv("TEMPERATURE", "0.2"))) # [0, 2]
         # JSON 強制（google-genai v1 以降で有効／古い版でも無害）
         resp = client.models.generate_content(
             model=model_name,
-            contents=prompt
+            contents=prompt,
+            config=config
         )
         text = (_resp_to_text(resp) or "").strip()
         data = _force_json(text)
@@ -467,6 +470,7 @@ $ABSTRACT
 def summarize_title_and_bullets(title: str, abstract: str) -> dict:
     client = genai.Client()  # GEMINI_API_KEY は環境変数から
     model_name = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+    config=types.GenerateContentConfig(temperature=float(os.getenv("TEMPERATURE", "0.2"))) # [0, 2]
 
     prompt = PROMPT_TEMPLATE.substitute(
         TITLE=title,
@@ -474,7 +478,7 @@ def summarize_title_and_bullets(title: str, abstract: str) -> dict:
     )
 
     try:
-        resp = client.models.generate_content(model=model_name, contents=prompt)
+        resp = client.models.generate_content(model=model_name, contents=prompt, config=config)
         text = (_resp_to_text(resp) or "").strip()
         data = _force_json(text)
     except Exception:
