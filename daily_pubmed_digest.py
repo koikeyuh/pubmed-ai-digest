@@ -37,18 +37,58 @@ HEADERS = {"User-Agent": TOOL_NAME}
 # ========= 状態保存 =========
 STATE_PATH = "sent_pmids.json"
 
-def load_sent_pmids():
-    if os.path.exists(STATE_PATH):
-        try:
-            with open(STATE_PATH, "r", encoding="utf-8") as f:
-                return set(json.load(f))
-        except Exception:
-            return set()
-    return set()
+def load_sent_state():
+    """sent_pmids.json を {pmid: {added_at: str}} で読み込む（旧listにも後方互換）"""
+    if not os.path.exists(STATE_PATH):
+        return {}
+    try:
+        with open(STATE_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if isinstance(data, list):
+            # 旧形式：["pmid", ...] → 新形式へ
+            return {pmid: {"added_at": None} for pmid in data}
+        if isinstance(data, dict):
+            return data
+    except Exception:
+        pass
+    return {}
 
 def save_sent_pmids(pmids):
     with open(STATE_PATH, "w", encoding="utf-8") as f:
         json.dump(sorted(list(pmids)), f, ensure_ascii=False, indent=2)
+
+def prune_sent_state(state: dict, days: int = 90):
+    """
+    sent_pmids.json の {pmid: {"added_at": ISO8601}} から
+    added_at が `days` 日より前のレコードを削除して返す。
+    解析不能な日付や added_at 無しは安全側で残します。
+    return: (new_state, removed_count)
+    """
+    if not isinstance(state, dict):
+        return state, 0
+
+    cutoff_utc = datetime.now(timezone.utc) - timedelta(days=days)
+    kept, removed = {}, 0
+
+    for pmid, meta in state.items():
+        ts = (meta or {}).get("added_at")
+        if not ts:
+            kept[pmid] = meta  # 移行直後などは残す（安全側）
+            continue
+        try:
+            dt = datetime.fromisoformat(ts)
+            if dt.tzinfo is None:
+                # 念のため（基本は +09:00 付きで保存されている想定）
+                dt = dt.replace(tzinfo=timezone.utc)
+            dt_utc = dt.astimezone(timezone.utc)
+            if dt_utc >= cutoff_utc:
+                kept[pmid] = meta
+            else:
+                removed += 1
+        except Exception:
+            kept[pmid] = meta  # パース失敗は残す（安全側）
+
+    return kept, removed
 
 # ========= PubMed検索 =========
 def build_journal_query(journals):
@@ -580,12 +620,15 @@ def main():
 
     print(f"検索結果: {len(pmids)}件ヒット")
 
-    # 2) 重複除去
-    sent = load_sent_pmids()
-    new_pmids = [p for p in pmids if p not in sent]
+    # 送信済み状態のロード → ★ ここで剪定
+    state = load_sent_state()
+    prune_days = int(os.getenv("PRUNE_DAYS", "90"))
+    state, pruned = prune_sent_state(state, prune_days)
+    if pruned:
+        print(f"古い送信記録を {pruned} 件削除（>{prune_days}日）")
 
-    print(f"見つかった論文数: {len(pmids)}件")
-    print(f"既送信でスキップ: {len(pmids) - len(new_pmids)}件")
+    sent_set = set(state.keys())
+    new_pmids = [p for p in pmids if p not in sent_set]
     print(f"新規論文数: {len(new_pmids)}件")
 
     items = []
