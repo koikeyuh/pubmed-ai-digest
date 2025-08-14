@@ -53,9 +53,9 @@ def load_sent_state():
         pass
     return {}
 
-def save_sent_pmids(pmids):
+def save_sent_state(state: dict):
     with open(STATE_PATH, "w", encoding="utf-8") as f:
-        json.dump(sorted(list(pmids)), f, ensure_ascii=False, indent=2)
+        json.dump(state, f, ensure_ascii=False, indent=2, sort_keys=True)
 
 def prune_sent_state(state: dict, days: int = 90):
     """
@@ -637,10 +637,20 @@ def main():
         xml = pubmed_efetch(new_pmids)
         records = parse_records(xml)
 
+        # JSTの現在時刻（ISO8601）を初回登録に記録
+        jst = timezone(timedelta(hours=9))
+        now_jst_iso = datetime.now(jst).isoformat(timespec="seconds")
+
         # 4) 各レコードを要約（1論文=1APIコール）
         print(f"\n{len(records)}件の新規論文を処理")
         for idx, rec in enumerate(records, 1):
             print("\n=== AI要約・翻訳生成開始 ===")
+            # 初回登録日時を state に保存（メールには出さない）
+            if rec["pmid"] not in state or not isinstance(state.get(rec["pmid"]), dict):
+                state[rec["pmid"]] = {"added_at": now_jst_iso}
+            elif not state[rec["pmid"]].get("added_at"):
+                state[rec["pmid"]]["added_at"] = now_jst_iso
+            
             print(f"要約中 ({idx}/{len(records)}): {rec['title'][:50]}...")
             data = summarize_title_and_bullets(rec["title"], rec["abstract"] or "")
             rec["title_ja"] = data["title_ja"]
@@ -652,8 +662,8 @@ def main():
             items.append(rec)
 
         # 5) 送信済み更新
-        sent.update([r["pmid"] for r in records])
-        save_sent_pmids(sent)
+        # 状態保存（added_atを含む）
+        save_sent_state(state)
 
     # 6) メール送信（0件でも通知する運用）
     print("\n=== メール送信 ===")
